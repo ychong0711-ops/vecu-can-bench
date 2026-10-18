@@ -1,0 +1,8 @@
+# Python deps for the test suite (tests/) and analysis stage (analysis/).
+# Install: pip install -r requirements.txt
+pytest
+pandas
+numpy
+matplotlib
+tabulate    # backend for pandas.DataFrame.to_markdown() in analysis/analyze.py
+cantools    # DBC parsing in tests

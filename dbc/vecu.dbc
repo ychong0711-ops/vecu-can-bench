@@ -1,0 +1,91 @@
+VERSION ""
+
+NS_ :
+    NS_DESC_
+    CM_
+    BA_DEF_
+    BA_
+    VAL_
+    CAT_DEF_
+    CAT_
+    FILTER
+    BA_DEF_DEF_
+    EV_DATA_
+    ENVVAR_DATA_
+    SGTYPE_
+    SGTYPE_VAL_
+    BA_DEF_SGTYPE_
+    BA_SGTYPE_
+    SIG_TYPE_REF_
+    VAL_TABLE_
+    SIG_GROUP_
+    SIG_VALTYPE_
+    SIGTYPE_VALTYPE_
+    BO_TX_BU_
+    BA_DEF_REL_
+    BA_REL_
+    BA_DEF_DEF_REL_
+    BU_SG_REL_
+    BU_EV_REL_
+    BU_BO_REL_
+    SG_MUL_VAL_
+
+BS_:
+
+BU_: SENSOR FEATURE ASSISTANT MONITOR INJECTOR
+
+BO_ 256 SENSOR_SPEED: 8 SENSOR
+ SG_ SpeedKphX10 : 48|16@1+ (0.1,0) [0|6553.5] "km/h" FEATURE,MONITOR
+ SG_ TxMs : 16|32@1+ (1,0) [0|4294967295] "ms" MONITOR
+ SG_ Seq : 0|16@1+ (1,0) [0|65535] "" MONITOR
+
+BO_ 257 SENSOR_DIST: 8 SENSOR
+ SG_ DistCm : 48|16@1+ (1,0) [0|65535] "cm" FEATURE,MONITOR
+ SG_ TxMs : 16|32@1+ (1,0) [0|4294967295] "ms" MONITOR
+ SG_ Seq : 0|16@1+ (1,0) [0|65535] "" MONITOR
+
+BO_ 258 SENSOR_TEMP: 8 SENSOR
+ SG_ TempCelsiusX10 : 48|16@1+ (0.1,0) [0|6553.5] "degC" MONITOR
+ SG_ TxMs : 16|32@1+ (1,0) [0|4294967295] "ms" MONITOR
+ SG_ Seq : 0|16@1+ (1,0) [0|65535] "" MONITOR
+
+BO_ 512 CMD_BRAKE: 8 FEATURE
+ SG_ SrcSeq : 56|8@1+ (1,0) [0|255] "" ASSISTANT,MONITOR
+ SG_ BrakeLevel : 48|8@1+ (1,0) [0|100] "%" ASSISTANT,MONITOR
+ SG_ TxMs : 16|32@1+ (1,0) [0|4294967295] "ms" MONITOR
+ SG_ Seq : 0|16@1+ (1,0) [0|65535] "" MONITOR
+
+BO_ 513 CMD_LIGHT: 8 FEATURE
+ SG_ LightState : 48|8@1+ (1,0) [0|2] "" ASSISTANT,MONITOR
+ SG_ TxMs : 16|32@1+ (1,0) [0|4294967295] "ms" MONITOR
+ SG_ Seq : 0|16@1+ (1,0) [0|65535] "" MONITOR
+
+BO_ 768 HB_SENSOR: 8 SENSOR
+ SG_ UptimeS : 48|16@1+ (1,0) [0|65535] "s" MONITOR
+ SG_ TxMs : 16|32@1+ (1,0) [0|4294967295] "ms" MONITOR
+ SG_ Seq : 0|16@1+ (1,0) [0|65535] "" MONITOR
+
+BO_ 769 HB_FEATURE: 8 FEATURE
+ SG_ TxMs : 16|32@1+ (1,0) [0|4294967295] "ms" MONITOR
+ SG_ Seq : 0|16@1+ (1,0) [0|65535] "" MONITOR
+
+BO_ 770 HB_ASSISTANT: 8 ASSISTANT
+ SG_ TxMs : 16|32@1+ (1,0) [0|4294967295] "ms" MONITOR
+ SG_ Seq : 0|16@1+ (1,0) [0|65535] "" MONITOR
+
+BO_ 1024 LOADGEN: 8 INJECTOR
+ SG_ Seq : 0|16@1+ (1,0) [0|65535] "" MONITOR
+
+BO_ 1280 PING: 8 MONITOR
+ SG_ TxMs : 16|32@1+ (1,0) [0|4294967295] "ms" MONITOR
+ SG_ Seq : 0|16@1+ (1,0) [0|65535] "" ASSISTANT
+
+BO_ 1281 PONG: 8 ASSISTANT
+ SG_ TxMs : 16|32@1+ (1,0) [0|4294967295] "ms" MONITOR
+ SG_ Seq : 0|16@1+ (1,0) [0|65535] "" MONITOR
+
+CM_ BU_ SENSOR "Simulated sensor ECU (ProcessingECU-like)";
+CM_ BU_ FEATURE "Control-logic ECU (FeatureECU-like)";
+CM_ BU_ ASSISTANT "Actuator/demo ECU (AssistantECU-like), answers PING";
+CM_ BU_ MONITOR "Passive measurement node + active PING prober";
+CM_ BU_ INJECTOR "Deterministic bus-load generator";

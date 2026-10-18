@@ -1,0 +1,71 @@
+# vECU-Bench build
+CC      ?= gcc
+CFLAGS  ?= -O2 -std=gnu11 -Wall -Wextra -Wno-unused-parameter -Iinclude
+LDFLAGS ?= -lm
+
+BIN      := bin
+LIB_SRCS := src/can_util.c src/sched.c
+LIB_OBJS := $(LIB_SRCS:src/%.c=$(BIN)/%.o)
+NODES    := ecu_sensor ecu_feature ecu_assistant monitor injector
+TARGETS  := $(addprefix $(BIN)/,$(NODES))
+
+# ASAN build: separate output dir so it never pollutes the normal 'bin/'
+ASAN_CFLAGS  = -fsanitize=address,undefined -g -O1 -std=gnu11 -Wall -Wextra -Wno-unused-parameter -Iinclude
+ASAN_LDFLAGS = -fsanitize=address,undefined -lm
+ASAN_BIN     := bin-asan
+ASAN_LIB_SRCS := src/can_util.c src/sched.c
+ASAN_LIB_OBJS := $(ASAN_LIB_SRCS:src/%.c=$(ASAN_BIN)/%.o)
+ASAN_TARGETS  := $(addprefix $(ASAN_BIN)/,$(NODES))
+
+.PHONY: all clean test setup-vcan teardown-vcan demo deps asan lint
+
+all: $(TARGETS)
+
+$(BIN):
+	mkdir -p $(BIN)
+
+$(BIN)/%.o: src/%.c include/common.h | $(BIN)
+	$(CC) $(CFLAGS) -c $< -o $@
+
+$(BIN)/%: src/%.c $(LIB_OBJS) include/common.h | $(BIN)
+	$(CC) $(CFLAGS) $< $(LIB_OBJS) -o $@ $(LDFLAGS)
+
+# AddressSanitizer + UBSan build — isolated output, no impact on normal 'make'
+asan: $(ASAN_TARGETS)
+
+$(ASAN_BIN):
+	mkdir -p $(ASAN_BIN)
+
+$(ASAN_BIN)/%.o: src/%.c include/common.h | $(ASAN_BIN)
+	$(CC) $(ASAN_CFLAGS) -c $< -o $@
+
+$(ASAN_BIN)/%: src/%.c $(ASAN_LIB_OBJS) include/common.h | $(ASAN_BIN)
+	$(CC) $(ASAN_CFLAGS) $< $(ASAN_LIB_OBJS) -o $@ $(ASAN_LDFLAGS)
+
+# Python deps for tests + analysis (pytest, pandas, numpy, matplotlib, tabulate, cantools)
+deps:
+	pip install -r requirements.txt
+
+# cppcheck static analysis; exits non-zero on any warning/error
+lint:
+	@which cppcheck >/dev/null 2>&1 || { \
+		echo "cppcheck not found. Install: sudo apt-get install cppcheck  (Debian/Ubuntu)"; \
+		echo "or: brew install cppcheck (macOS)"; \
+		exit 1; \
+	}
+	cppcheck --enable=warning,performance,portability --error-exitcode=1 src include
+
+setup-vcan:
+	./scripts/setup_vcan.sh
+
+teardown-vcan:
+	./scripts/teardown_vcan.sh
+
+test: all
+	python3 -m pytest tests/ -v
+
+demo: all
+	./scripts/run_demo.sh
+
+clean:
+	rm -rf $(BIN) $(ASAN_BIN)

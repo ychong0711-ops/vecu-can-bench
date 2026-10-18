@@ -1,0 +1,81 @@
+name: ci
+
+on: [push, pull_request]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Python deps
+        run: pip install -r requirements.txt
+
+      - name: Load vcan module & create interface
+        run: |
+          sudo modprobe vcan
+          sudo ./scripts/setup_vcan.sh vcan0
+
+      - name: Build
+        run: make
+
+      - name: Pytest (functional + performance on live vcan)
+        run: python3 -m pytest tests/ -v --junitxml=reports/junit.xml
+
+      - name: Demo run + analysis
+        run: DUR=15 ./scripts/run_demo.sh
+
+      - name: Upload reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: reports
+          path: reports/
+
+  qa:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install cppcheck
+        run: sudo apt-get update && sudo apt-get install -y cppcheck
+
+      - name: Run lint
+        run: make lint
+
+      - name: Verify ID map artifacts
+        run: python3 scripts/gen_idmap.py --check
+
+  test-asan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Python deps
+        run: pip install -r requirements.txt
+
+      - name: Load vcan module & create interface
+        run: |
+          sudo modprobe vcan
+          sudo ./scripts/setup_vcan.sh vcan0
+
+      - name: Build with ASAN
+        run: make asan
+
+      - name: Pytest on ASAN build (functional + performance)
+        run: python3 -m pytest tests/ -v --junitxml=reports/junit-asan.xml
+
+      - name: Upload ASAN reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: reports-asan
+          path: reports/
