@@ -4,3 +4,6 @@ reports/
 *.o
 __pycache__/
 .pytest_cache/
+# Track A2 mutation scratch (applied-seed worktree copies + transient results)
+mutation/work/
+mutation/result-*.json
