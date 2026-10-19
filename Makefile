@@ -30,6 +30,11 @@ $(BIN)/%.o: src/%.c include/common.h | $(BIN)
 $(BIN)/%: src/%.c $(LIB_OBJS) include/common.h | $(BIN)
 	$(CC) $(CFLAGS) $< $(LIB_OBJS) -o $@ $(LDFLAGS)
 
+# Track A1: ecu_feature additionally links the SWC implementation
+$(BIN)/ecu_feature: src/ecu_feature.c $(LIB_OBJS) $(BIN)/swc_brake.o \
+                    include/common.h include/rte_feature.h include/swc_brake.h | $(BIN)
+	$(CC) $(CFLAGS) $< $(LIB_OBJS) $(BIN)/swc_brake.o -o $@ $(LDFLAGS)
+
 # AddressSanitizer + UBSan build — isolated output, no impact on normal 'make'
 asan: $(ASAN_TARGETS)
 
@@ -42,11 +47,16 @@ $(ASAN_BIN)/%.o: src/%.c include/common.h | $(ASAN_BIN)
 $(ASAN_BIN)/%: src/%.c $(ASAN_LIB_OBJS) include/common.h | $(ASAN_BIN)
 	$(CC) $(ASAN_CFLAGS) $< $(ASAN_LIB_OBJS) -o $@ $(ASAN_LDFLAGS)
 
+# Track A1: ASan build of ecu_feature links the SWC implementation too
+$(ASAN_BIN)/ecu_feature: src/ecu_feature.c $(ASAN_LIB_OBJS) $(ASAN_BIN)/swc_brake.o \
+                         include/common.h include/rte_feature.h include/swc_brake.h | $(ASAN_BIN)
+	$(CC) $(ASAN_CFLAGS) $< $(ASAN_LIB_OBJS) $(ASAN_BIN)/swc_brake.o -o $@ $(ASAN_LDFLAGS)
+
 # Python deps for tests + analysis (pytest, pandas, numpy, matplotlib, tabulate, cantools)
 deps:
 	pip install -r requirements.txt
 
-# cppcheck static analysis; exits non-zero on any warning/error
+# cppcheck static analysis + Track A1 layering gate; exits non-zero on any hit
 lint:
 	@which cppcheck >/dev/null 2>&1 || { \
 		echo "cppcheck not found. Install: sudo apt-get install cppcheck  (Debian/Ubuntu)"; \
@@ -54,6 +64,7 @@ lint:
 		exit 1; \
 	}
 	cppcheck --enable=warning,performance,portability --error-exitcode=1 src include
+	python3 scripts/check_layering.py
 
 setup-vcan:
 	./scripts/setup_vcan.sh

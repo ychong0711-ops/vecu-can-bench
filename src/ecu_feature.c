@@ -1,23 +1,25 @@
-/* vECU-Bench :: ecu_feature -- "FeatureECU"-like node.
- * Consumes SENSOR_SPEED/SENSOR_DIST and runs the demo control logic:
+/* vECU-Bench :: ecu_feature -- "FeatureECU"-like node (composition layer).
+ *
+ * AUTOSAR-style split (Track A1, see ../vecu-track-a.plan.md):
+ *   ecu_feature.c  driver/composition: CAN rx -> Rte_Write, runnable
+ *                  dispatch (100 ms), Rte_Read -> transmit. Frame I/O only.
+ *   rte_feature.h  RTE port + Rte_Read_/Rte_Write_ accessors.
+ *   swc_brake.h/.c SWC: pure control logic (no OS/CAN headers; gated).
+ *
+ * Behavior (bit-identical to baseline 24cbad2):
  *   brake_level = dist < 300 cm ? clamp((300-dist)/3, 0..100) : 0
  *   light_state = dist < 150 cm ? 2 (hazard) : speed > 70 km/h ? 1 (low beam) : 0
- * Publishes 0x200 CMD_BRAKE / 0x201 CMD_LIGHT every 100 ms.
- * CMD_BRAKE value = (src_seq8 << 8) | brake_level, where src_seq8 is the low
- * byte of the last consumed SENSOR_DIST seq -> enables end-to-end correlation
- * (sensor sample -> actuator command) in the analysis step.
+ * Publishes 0x200 CMD_BRAKE / 0x201 CMD_LIGHT every 100 ms; the CMD_BRAKE
+ * value embeds the last SENSOR_DIST seq byte for E2E correlation.
  */
 #include "common.h"
-#include "ecu_logic.h"
+#include "rte_feature.h"
+#include "swc_brake.h"
 
 typedef struct {
+    rte_feature_t rte;       /* RTE port: signal cache + command outputs */
+    /* driver-layer frame sequencing + TX failure accounting */
     uint16_t seq_brake, seq_light, seq_hb;
-    uint16_t speed;        /* 0.1 km/h */
-    uint16_t dist_cm;
-    uint16_t dist_seq;     /* last sensor seq (for E2E join) */
-    uint64_t dist_rx_ms;   /* arrival time of last dist sample */
-    int      have_dist, have_speed;
-    uint8_t  brake, light;
     uint64_t tx_fail_brake, tx_fail_light, tx_fail_hb;
 } feature_state_t;
 
@@ -28,10 +30,11 @@ static void on_rx(node_t *n, const struct can_frame *f)
     if (meas_unpack(f, &seq, &tx, &value) < 0) return;
     switch (f->can_id) {
     case CAN_ID_SENSOR_SPEED:
-        s->speed = value; s->have_speed = 1; break;
+        Rte_Write_SensorSpeed(&s->rte, value);
+        break;
     case CAN_ID_SENSOR_DIST:
-        s->dist_cm = value; s->dist_seq = seq;
-        s->dist_rx_ms = now_ms(); s->have_dist = 1; break;
+        Rte_Write_SensorDist(&s->rte, value, seq, now_ms());
+        break;
     default: break;
     }
     (void)n;
@@ -41,21 +44,27 @@ static void on_rx(node_t *n, const struct can_frame *f)
  * mode, so count them per publish path and report at shutdown; the first
  * brake-path failure additionally warns immediately (seen-once). */
 
+/* 100 ms runnable: RTE read -> SWC -> RTE write -> driver transmit. */
 static void task_cmd(node_t *n)
 {
     feature_state_t *s = n->state;
-    /* --- control logic (pure, unit-tested: ecu_logic.h / tests/test_logic.py) --- */
-    uint8_t brake = feature_brake_level(s->have_dist, s->dist_cm);
-    uint8_t light = feature_light_state(s->have_dist, s->dist_cm,
-                                        s->have_speed, s->speed);
-    s->brake = brake; s->light = light;
 
-    uint64_t age = s->have_dist ? (now_ms() - s->dist_rx_ms) : 0;
+    swc_inputs_t in;
+    swc_outputs_t out;
+    uint64_t dist_rx_ms = 0;
+    in.have_dist   = Rte_Read_SensorDist(&s->rte, &in.dist_cm,
+                                         &in.dist_seq, &dist_rx_ms);
+    in.have_speed  = Rte_Read_SensorSpeed(&s->rte, &in.speed_01kmh);
+    swc_brake_compute(&in, &out);
+    Rte_Write_CMD_BRAKE(&s->rte, out.brake, out.cmd_brake);
+    Rte_Write_CMD_LIGHT(&s->rte, out.light);
+
+    uint64_t age = in.have_dist ? (now_ms() - dist_rx_ms) : 0;
     if (age > 500) LOGN("sensor data stale (%llu ms)", (unsigned long long)age);
 
+    /* driver: transmit the RTE command outputs */
     struct can_frame f;
-    meas_pack(&f, CAN_ID_CMD_BRAKE, s->seq_brake++,
-              feature_cmd_brake_pack(s->dist_seq, brake));
+    meas_pack(&f, CAN_ID_CMD_BRAKE, s->seq_brake++, out.cmd_brake);
     if (can_send(n->fd, f.can_id, f.data, f.can_dlc) < 0) {
         if (s->tx_fail_brake == 0)
             warn_once("can_send(CMD_BRAKE) failing - brake commands dropped");
@@ -63,7 +72,7 @@ static void task_cmd(node_t *n)
         LOGN("can_send brake failed");
     }
 
-    meas_pack(&f, CAN_ID_CMD_LIGHT, s->seq_light++, light);
+    meas_pack(&f, CAN_ID_CMD_LIGHT, s->seq_light++, out.light);
     if (can_send(n->fd, f.can_id, f.data, f.can_dlc) < 0) {
         SATURATING_INC(&s->tx_fail_light);
         LOGN("can_send light failed");
@@ -81,7 +90,8 @@ static void task_hb(node_t *n)
     }
     if (g_verbose)
         fprintf(stderr, "[feature] speed=%.1f km/h dist=%u cm brake=%u light=%u\n",
-                s->speed / 10.0, s->dist_cm, s->brake, s->light);
+                s->rte.speed_01kmh / 10.0, s->rte.dist_cm,
+                Rte_Read_CMD_BRAKE(&s->rte, NULL), Rte_Read_CMD_LIGHT(&s->rte));
 }
 
 int main(int argc, char **argv)

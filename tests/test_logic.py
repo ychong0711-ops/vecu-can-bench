@@ -1,8 +1,9 @@
-"""Unit tests for the extracted feature-ECU control logic (SWC-style).
+"""Unit tests for the feature-ECU control logic (Track A1: SWC layer).
 
-Builds src/ecu_logic.c into a shared library (gcc -shared -fPIC) in a temp
-dir and exercises it through ctypes. No vcan interface, no node binaries and
-no Makefile required: these tests run standalone wherever gcc exists.
+Builds the FFI wrapper src/ecu_logic.c linked against the SWC implementation
+src/swc_brake.c into a shared library (gcc -shared -fPIC) in a temp dir and
+exercises it through ctypes. No vcan interface, no node binaries and no
+Makefile required: these tests run standalone wherever gcc exists.
 """
 import ctypes
 import os
@@ -13,23 +14,24 @@ import tempfile
 import pytest
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-SRC = os.path.join(ROOT, "src", "ecu_logic.c")
+SRCS = [os.path.join(ROOT, "src", "ecu_logic.c"),
+        os.path.join(ROOT, "src", "swc_brake.c")]
 INC = os.path.join(ROOT, "include")
 
 GCC = shutil.which("gcc") or shutil.which("cc")
 
-# CMD_LIGHT payload values (mirror include/ecu_logic.h)
+# CMD_LIGHT payload values (mirror include/swc_brake.h)
 LIGHT_OFF, LIGHT_LOW_BEAM, LIGHT_HAZARD = 0, 1, 2
 
 
 @pytest.fixture(scope="module")
 def logic():
-    """Compile src/ecu_logic.c -> libecu_logic.so and load it via ctypes."""
+    """Compile ecu_logic.c + swc_brake.c -> libecu_logic.so (ctypes FFI)."""
     if not GCC:
         pytest.skip("gcc not available")
     tmp = tempfile.mkdtemp(prefix="vecu_logic_")
     so = os.path.join(tmp, "libecu_logic.so")
-    r = subprocess.run([GCC, "-shared", "-fPIC", "-I", INC, SRC, "-o", so],
+    r = subprocess.run([GCC, "-shared", "-fPIC", "-I", INC, *SRCS, "-o", so],
                        capture_output=True, text=True)
     if r.returncode != 0:
         shutil.rmtree(tmp, ignore_errors=True)
