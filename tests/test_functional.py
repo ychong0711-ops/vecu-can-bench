@@ -50,7 +50,10 @@ def test_feature_brake_logic(nodes):
             s.send(pack_frame(IDS["SENSOR_DIST"], meas_payload(seq, 100)))
             seq += 1
             try:
-                while True:
+                # bounded drain: the node publishes every 100 ms forever, so
+                # an unbounded recv loop would never see the 1 s idle timeout
+                inner_end = time.monotonic() + 0.4
+                while time.monotonic() < inner_end:
                     cid, data = unpack_frame(s.recv(16))
                     if cid == IDS["CMD_BRAKE"]:
                         brakes.append(unpack_meas(data)[2] & 0xFF)
@@ -67,7 +70,9 @@ def test_feature_brake_logic(nodes):
             s.send(pack_frame(IDS["SENSOR_DIST"], meas_payload(seq, 1800)))
             seq += 1
             try:
-                while True:
+                # bounded drain (same as above)
+                inner_end = time.monotonic() + 0.4
+                while time.monotonic() < inner_end:
                     cid, data = unpack_frame(s.recv(16))
                     if cid == IDS["CMD_BRAKE"]:
                         brakes_far.append(unpack_meas(data)[2] & 0xFF)

@@ -107,6 +107,13 @@ int  node_add_task(node_t *n, const char *name, uint32_t period_ms, task_fn fn);
 int  node_run(node_t *n, uint32_t duration_s);   /* 0 = run until signal */
 void node_print_stats(const node_t *n);
 
+/* ---- saturating increment for uint64_t counters (prevents overflow) ---- */
+static inline void SATURATING_INC(uint64_t *ptr)
+{
+    if (*ptr < UINT64_MAX)
+        (*ptr)++;
+}
+
 /* ---- logging ---- */
 extern int g_verbose;
 #define LOGN(fmt, ...) do { if (g_verbose) fprintf(stderr, "[%s] " fmt "\n", \

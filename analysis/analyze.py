@@ -17,6 +17,10 @@ import json
 import os
 import sys
 
+# Force C locale for locale-independent number parsing (decimal separator, thousands separator)
+# Must be set before pandas import
+os.environ.setdefault("LC_ALL", "C")
+
 import numpy as np
 import pandas as pd
 
@@ -53,10 +57,10 @@ def load_and_validate_csv(path, skip_validation=False):
         for col in NUMERIC_COLUMNS:
             if col in df.columns:
                 if not pd.api.types.is_numeric_dtype(df[col]):
-                    try:
-                        df[col] = pd.to_numeric(df[col], errors="raise")
-                    except Exception as e:
-                        print(f"ERROR: Column '{col}' must be numeric: {e}", file=sys.stderr)
+                    df[col] = pd.to_numeric(df[col], errors="coerce")
+                    if df[col].isna().any():
+                        bad_rows = df[df[col].isna()].index.tolist()
+                        print(f"ERROR: Column '{col}' contains non-numeric values at rows: {bad_rows[:10]}", file=sys.stderr)
                         sys.exit(1)
     
     df["id"] = df["id"].map(lambda s: int(str(s), 16)).astype(int)

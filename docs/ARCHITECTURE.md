@@ -75,8 +75,18 @@ run_matrix.sh ──► reports/<scenario>/… ──► analyze.py --matrix ─
   (PCAN/PEAK, Kvaser, SocketCAN-compatible) — no code changes needed.
 * One-way latency relies on a **shared host clock** — valid single-host only.
   The PING/PONG RTT path is the clock-independent cross-check.
-* `tc/netem` shapes the qdisc realistically at OS level; `loss` there is
-  *interface drop*, complementing (not replacing) seq-gap loss accounting.
+* `tc/netem` shapes the TX qdisc, but same-host vcan receivers get frames via
+  a socket-level loopback clone (vcan has no IFF_ECHO) that **bypasses the
+  qdisc**; the delayed real frame reaches the driver, which does not
+  re-deliver it. Measured: `loss 100%` still delivered every frame and
+  `delay 500ms` yielded 0.05 ms delivery. Consequences:
+  (i) disabling `CAN_RAW_LOOPBACK` breaks delivery outright (TX counters move,
+  rx = 0 — measured), so it must stay on; (ii) netem `delay`/`loss` scenarios
+  are a no-op for same-host vcan runs (the matrix keeps them for CI structure,
+  but they should not be quoted as fault-injection results); (iii) netem only
+  becomes meaningful with a real adapter transmitting to other hosts, where
+  the driver TX path goes through the qdisc on the wire. The `test_netem_delay_visible`
+  probe skips with this reason when shaping has no observable effect.
 * Receive buffers are enlarged (4 MB, `SO_RCVBUFFORCE` when permitted) and
   `txqueuelen` raised by `setup_vcan.sh` to avoid measurement artifacts under
   high injected load; ENOBUFS on tx is counted by the injector, not hidden.

@@ -27,11 +27,25 @@ static void on_signal(int sig)
 void install_signal_handlers(void)
 {
     struct sigaction sa;
+    sigset_t block_mask, old_mask;
+
+    /* Block SIGINT and SIGTERM during handler installation to prevent
+     * race where a signal arrives after sigaction() but before the
+     * main loop checks g_running. */
+    sigemptyset(&block_mask);
+    sigaddset(&block_mask, SIGINT);
+    sigaddset(&block_mask, SIGTERM);
+    sigprocmask(SIG_BLOCK, &block_mask, &old_mask);
+
     memset(&sa, 0, sizeof(sa));
     sa.sa_handler = on_signal;
+    sa.sa_flags = SA_RESTART;  /* restart select()/recv() on signal */
     sigaction(SIGINT, &sa, NULL);
     sigaction(SIGTERM, &sa, NULL);
     signal(SIGPIPE, SIG_IGN);
+
+    /* Unblock signals - now safe to receive them */
+    sigprocmask(SIG_SETMASK, &old_mask, NULL);
 }
 
 int can_open(const char *ifname)
@@ -55,6 +69,14 @@ int can_open(const char *ifname)
     if (bind(fd, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
         perror("bind"); close(fd); return -1;
     }
+
+    /* NOTE — do NOT disable CAN_RAW_LOOPBACK here (tried; reverted):
+     * vcan has no IFF_ECHO, so same-host receivers get frames exclusively via
+     * the socket-layer loopback clone. Disabling it leaves TX counters moving
+     * but delivers 0 frames to receivers (measured on WSL2 kernel 6.18).
+     * Side effect of that clone path: it bypasses the TX qdisc, so tc/netem
+     * delay/loss cannot affect receiver-visible frames on vcan (documented
+     * in docs/ARCHITECTURE.md §6; meaningful only with real hardware). */
 
     /* enlarge receive buffer so bursty bus load does not overflow */
     int rcvbuf = 4 * 1024 * 1024;

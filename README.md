@@ -112,8 +112,14 @@ analysis/analyze.py  CSV → percentile stats, latency CDF, bus-load series, E2E
 * All nodes share one host clock (`CLOCK_MONOTONIC`), so one-way latency from
   the embedded `tx_ms` is exact (no clock-sync error) — but only valid
   single-host. The PING/PONG RTT path additionally validates the monitor.
-* `tc/netem` operates on the interface qdisc and therefore emulates
-  network-induced delay/loss realistically at the OS level.
+* `tc/netem` on **vcan** shapes only the real frame behind the socket-layer
+  loopback clone that receivers actually see — so delay/loss presets are a
+  **no-op for same-host delivery** (verified: `netem loss 100%` still delivered
+  every frame; `delay 500ms` measured 0.05 ms). The scenario matrix's
+  `delay*`/`loss*` cells therefore show no delta on vcan; netem becomes
+  meaningful when swapping in a real adapter transmitting across hosts
+  (`tests/test_performance.py::test_netem_delay_visible` probes this and
+  skips with the reason when ineffective).
 
 ## Extension tracks
 

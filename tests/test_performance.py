@@ -9,7 +9,7 @@ import time
 
 import pytest
 
-from conftest import (IFACE, ROOT, bin_path, load_json, nodes, vcan)
+from conftest import (IFACE, ROOT, bin_path, load_json, nodes, pack_frame, vcan)
 
 MON = bin_path("monitor")
 
@@ -69,6 +69,44 @@ def test_latency_under_load(nodes):
     assert 35.0 <= s["bus"]["avg_load_pct"] <= 50.0
 
 
+def _netem_effective(iface, delay_ms=10):
+    """Probe whether tc/netem actually delays receiver-visible frames.
+
+    vcan has no IFF_ECHO: same-host frames reach receivers through a
+    socket-layer loopback clone that bypasses the TX qdisc entirely, so
+    netem shaping may be a no-op. Two sockets mirror node behavior.
+    """
+    import socket as _sock
+    tx = _sock.socket(_sock.PF_CAN, _sock.SOCK_RAW, _sock.CAN_RAW)
+    rx = _sock.socket(_sock.PF_CAN, _sock.SOCK_RAW, _sock.CAN_RAW)
+    try:
+        tx.bind((iface,))
+        rx.bind((iface,))
+        rx.settimeout(0.05)
+        try:
+            while True:
+                rx.recv(16)
+        except (TimeoutError, OSError):
+            pass
+        rx.settimeout(1.0)
+        deltas = []
+        for i in range(5):
+            t0 = time.monotonic()
+            try:
+                tx.send(pack_frame(0x7FF, b"\x55" * 8))
+                rx.recv(16)
+                deltas.append((time.monotonic() - t0) * 1000)
+            except OSError:
+                pass
+            time.sleep(0.02)
+        if not deltas:
+            return False
+        return sorted(deltas)[len(deltas) // 2] >= delay_ms * 0.7
+    finally:
+        tx.close()
+        rx.close()
+
+
 def test_netem_delay_visible(nodes):
     """netem delay 10ms+-2ms must be observable in RTT (p50 >= 15 ms)."""
     if os.geteuid() != 0 and not os.access("/usr/sbin/tc", os.X_OK):
@@ -77,6 +115,12 @@ def test_netem_delay_visible(nodes):
                         "netem", "delay", "10ms", "2ms"], capture_output=True)
     if r.returncode != 0:
         pytest.skip(f"netem unavailable: {r.stderr.decode()[:120]}")
+    if not _netem_effective(IFACE, 10):
+        subprocess.run(["tc", "qdisc", "del", "dev", IFACE, "root"],
+                       capture_output=True)
+        pytest.skip("netem has no effect on same-host vcan delivery "
+                    "(socket-loopback clone bypasses the TX qdisc; see "
+                    "docs/ARCHITECTURE.md §6)")
     try:
         nodes(bin_path("ecu_assistant"), "--iface", IFACE, "--duration", "6")
         s = run_monitor(nodes, 6, extra=("--ping-interval", "10"))

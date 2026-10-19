@@ -57,14 +57,15 @@ static void task_cmd(node_t *n)
     meas_pack(&f, CAN_ID_CMD_BRAKE, s->seq_brake++,
               feature_cmd_brake_pack(s->dist_seq, brake));
     if (can_send(n->fd, f.can_id, f.data, f.can_dlc) < 0) {
-        if (s->tx_fail_brake++ == 0)
+        if (s->tx_fail_brake == 0)
             warn_once("can_send(CMD_BRAKE) failing - brake commands dropped");
+        SATURATING_INC(&s->tx_fail_brake);
         LOGN("can_send brake failed");
     }
 
     meas_pack(&f, CAN_ID_CMD_LIGHT, s->seq_light++, light);
     if (can_send(n->fd, f.can_id, f.data, f.can_dlc) < 0) {
-        s->tx_fail_light++;
+        SATURATING_INC(&s->tx_fail_light);
         LOGN("can_send light failed");
     }
 }
@@ -75,7 +76,7 @@ static void task_hb(node_t *n)
     struct can_frame f;
     meas_pack(&f, CAN_ID_HB_FEATURE, s->seq_hb++, 0);
     if (can_send(n->fd, f.can_id, f.data, f.can_dlc) < 0) {
-        s->tx_fail_hb++;
+        SATURATING_INC(&s->tx_fail_hb);
         LOGN("can_send hb failed");
     }
     if (g_verbose)

@@ -66,7 +66,7 @@ int main(int argc, char **argv)
             data[0] = (uint8_t)(g_seq & 0xFF);
             data[1] = (uint8_t)(g_seq >> 8);
             int r = can_send(fd, id, data, (uint8_t)dlc);
-            if (r == -ENOBUFS) { g_enobufs++; continue; }
+            if (r == -ENOBUFS) { SATURATING_INC(&g_enobufs); continue; }
             if (r < 0) break;
             g_sent++; g_seq++;
         }

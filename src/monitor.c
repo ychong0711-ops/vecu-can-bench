@@ -40,6 +40,9 @@ static void u32_push(u32arr *a, uint32_t x)
         size_t newcap = a->cap ? a->cap * 2 : 8192;
         uint32_t *nv = (uint32_t *)realloc(a->v, newcap * sizeof(uint32_t));
         if (!nv) { perror("realloc"); exit(1); }
+        if (a->cap < newcap) {
+            memset(nv + a->cap, 0, (newcap - a->cap) * sizeof(uint32_t));
+        }
         a->v = nv;
         a->cap = newcap;
     }
@@ -52,6 +55,9 @@ static void u64_push(u64arr *a, uint64_t x)
         size_t newcap = a->cap ? a->cap * 2 : 3600;  /* default 1 hour */
         uint64_t *nv = (uint64_t *)realloc(a->v, newcap * sizeof(uint64_t));
         if (!nv) { perror("realloc"); exit(1); }
+        if (a->cap < newcap) {
+            memset(nv + a->cap, 0, (newcap - a->cap) * sizeof(uint64_t));
+        }
         a->v = nv;
         a->cap = newcap;
     }
@@ -141,7 +147,7 @@ static void mon_on_rx(node_t *n, const struct can_frame *f)
         if (!m->max_lat_samples || s->lat.n < m->max_lat_samples) {
             u32_push(&s->lat, lat);
         } else {
-            m->lat_overflow++;
+            SATURATING_INC(&m->lat_overflow);
         }
     } else {
         s->lat_dropped++;
@@ -164,13 +170,14 @@ static double win_load_pct(uint64_t bits)
 static void emit_json_u32arr(FILE *fp, const char *key, const u32arr *a)
 {
     if (!a->n) { fprintf(fp, "\"%s\":null", key); return; }
-        u32arr sarr = { .v = malloc(a->n * sizeof(uint32_t)), .n = a->n };
-        if (!sarr.v && a->n > 0) { perror("malloc"); exit(1); }
-        if (a->n > 0) memcpy(sarr.v, a->v, a->n * sizeof(uint32_t));
-        qsort(sarr.v, sarr.n, sizeof(uint32_t), cmp_u32);
-        fprintf(fp, "\"%s\":{\"n\":%zu,\"p50\":%u,\"p95\":%u,\"p99\":%u,\"max\":%u}",
-                key, sarr.n, pct(&sarr, 50), pct(&sarr, 95), pct(&sarr, 99), sarr.v[sarr.n - 1]);
-        if (sarr.v) free(sarr.v);
+    u32arr sarr = { .v = malloc(a->n * sizeof(uint32_t)), .n = a->n };
+    if (!sarr.v) { perror("malloc"); exit(1); }
+    memcpy(sarr.v, a->v, a->n * sizeof(uint32_t));
+    qsort(sarr.v, sarr.n, sizeof(uint32_t), cmp_u32);
+    fprintf(fp, "\"%s\":{\"n\":%zu,\"p50\":%u,\"p95\":%u,\"p99\":%u,\"max\":%u}",
+            key, sarr.n, pct(&sarr, 50), pct(&sarr, 95), pct(&sarr, 99),
+            sarr.v[sarr.n - 1]);
+    free(sarr.v);
 }
 
 static void write_summary(mon_t *m, const char *path, const char *iface)
@@ -227,7 +234,7 @@ int main(int argc, char **argv)
         else if (!strcmp(argv[i], "--csv") && i + 1 < argc)      csv_path = argv[++i];
         else if (!strcmp(argv[i], "--summary") && i + 1 < argc)  sum_path = argv[++i];
         else if (!strcmp(argv[i], "--ping-interval") && i + 1 < argc) ping_iv = atof(argv[++i]);
-        else if (!strcmp(argv[i], "--max-samples") && i + 1 < argc) { /* keep for compatibility */ (void)atoi(argv[++i]); }
+        else if (!strcmp(argv[i], "--max-samples") && i + 1 < argc) { ++i; /* value consumed in the second pass below */ }
         else if (!strcmp(argv[i], "--verbose"))                  g_verbose = 1;
         else { fprintf(stderr,
                 "usage: %s [--iface vcan0] [--duration s] [--csv f.csv] "
@@ -286,14 +293,14 @@ int main(int argc, char **argv)
         idstat_t *s = &m.st[i];
         if (!s->count) continue;
         u32arr sorted = { .v = malloc(s->lat.n * sizeof(uint32_t) + 1), .n = s->lat.n };
-        if (!sorted.v && s->lat.n > 0) { perror("malloc"); exit(1); }
+        if (!sorted.v) { perror("malloc"); exit(1); }
         if (s->lat.n) { memcpy(sorted.v, s->lat.v, s->lat.n * sizeof(uint32_t));
                         qsort(sorted.v, sorted.n, sizeof(uint32_t), cmp_u32); }
         fprintf(stderr, "  0x%03X %-13s n=%-8llu lost=%-6llu lat ms p50=%u p95=%u p99=%u max=%u\n",
                 VECU_ID_MAP_TRACK[i].id, VECU_ID_MAP_TRACK[i].name, (unsigned long long)s->count,
                 (unsigned long long)s->lost, pct(&sorted, 50), pct(&sorted, 95),
                 pct(&sorted, 99), sorted.n ? sorted.v[sorted.n - 1] : 0);
-        if (sorted.v) free(sorted.v);
+        free(sorted.v);
     }
     node_print_stats(&n);
     close(n.fd);
