@@ -16,9 +16,7 @@ jobs:
         run: pip install -r requirements.txt
 
       - name: Load vcan module & create interface
-        run: |
-          sudo modprobe vcan
-          sudo ./scripts/setup_vcan.sh vcan0
+        run: sudo ./scripts/ci_setup_vcan.sh vcan0
 
       - name: Build
         run: make
@@ -66,9 +64,7 @@ jobs:
         run: pip install -r requirements.txt
 
       - name: Load vcan module & create interface
-        run: |
-          sudo modprobe vcan
-          sudo ./scripts/setup_vcan.sh vcan0
+        run: sudo ./scripts/ci_setup_vcan.sh vcan0
 
       - name: Build with ASAN
         run: make asan
@@ -99,9 +95,7 @@ jobs:
         run: pip install -r requirements.txt
 
       - name: Load vcan module & create interface
-        run: |
-          sudo modprobe vcan
-          sudo ./scripts/setup_vcan.sh vcan0
+        run: sudo ./scripts/ci_setup_vcan.sh vcan0
 
       - name: Build
         run: make
@@ -136,9 +130,7 @@ jobs:
         run: pip install -r requirements.txt
 
       - name: Load vcan module & create interface
-        run: |
-          sudo modprobe vcan
-          sudo ./scripts/setup_vcan.sh vcan0
+        run: sudo ./scripts/ci_setup_vcan.sh vcan0
 
       - name: Build
         run: make
