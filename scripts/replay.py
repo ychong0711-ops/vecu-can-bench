@@ -22,7 +22,9 @@ Properties (latency budget defaults to 300 ms = 3 x the 100 ms CMD period)
                       scenario in replay/scenarios/.)
   P2 brake_release  : CMD_BRAKE.brake > 0 while the whole preceding budget
                       window shows SENSOR_DIST >= 300 cm is a violation
-                      (brake must release on a clear road)
+                      (brake must release on a clear road); the window must
+                      be fully observed first, so a replay started against an
+                      ECU holding an older command is not misflagged
   P3 cmd_liveness   : CMD_BRAKE must keep arriving with gaps <= cadence budget
                       (250 ms) — holds for stalled sensors too
 
@@ -296,12 +298,16 @@ def check_properties(obs, latency_ms=DEFAULT_LATENCY_MS,
                 "detail": f"SENSOR_DIST={d}cm at {t}ms: not braked at that "
                           f"moment and no CMD_BRAKE>0 within {latency_ms}ms"})
 
-    # P2: brake released on a sustained clear road
+    # P2: brake released on a sustained clear road. The window must be fully
+    # observed first (a distance sample at or before ct - latency_ms):
+    # otherwise a replay started against an ECU that still holds a brake
+    # command from a previous run would be flagged during its first budget.
     for ct, b in cmd:
         if b == 0:
             continue
         window = [d for t, d in dist if ct - latency_ms <= t <= ct]
-        if window and min(window) >= DIST_RAMP_CM:
+        covered = bool(dist) and dist[0][0] <= ct - latency_ms
+        if covered and window and min(window) >= DIST_RAMP_CM:
             violations.append({
                 "property": "P2", "at_ms": ct,
                 "detail": f"CMD_BRAKE={b} at {ct}ms although SENSOR_DIST>="

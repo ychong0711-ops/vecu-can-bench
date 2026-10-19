@@ -17,7 +17,7 @@ ASAN_LIB_SRCS := src/can_util.c src/sched.c
 ASAN_LIB_OBJS := $(ASAN_LIB_SRCS:src/%.c=$(ASAN_BIN)/%.o)
 ASAN_TARGETS  := $(addprefix $(ASAN_BIN)/,$(NODES))
 
-.PHONY: all clean test setup-vcan teardown-vcan demo deps asan lint mutation
+.PHONY: all clean test setup-vcan teardown-vcan demo deps asan lint mutation replay
 
 all: $(TARGETS)
 
@@ -78,6 +78,10 @@ test: all
 # Track A2: seed-bug mutation run + report (reports/mutation/)
 mutation: all
 	python3 scripts/mutate.py
+
+# Track A3: HIL replay suite — every scenario against a fresh ECU (properties P1/P2/P3)
+replay: all
+	./scripts/replay_suite.sh
 
 demo: all
 	./scripts/run_demo.sh

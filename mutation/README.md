@@ -26,7 +26,7 @@ python3 scripts/mutate.py --only brake_ramp_divisor
 seeds: 15   scored: 14   equivalent verified: 1   invalid: 0
 detected: 14   survived: 0
 mutation score: 100.0%   (gate: >= 90%)
-runtime: 71.4 s (serial) / 22.5 s (--jobs 4, test_logic만)
+runtime: ≈ 75 s serial (69–81 s 측정) / 22.5 s (--jobs 4, test_logic만)
 ```
 
 시드별 탐지 테스트:

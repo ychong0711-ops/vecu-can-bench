@@ -124,6 +124,28 @@ def test_p1_flags_unanswered_close_range():
     assert counts["P1"] == 1, violations
 
 
+def test_p2_ignores_incomplete_window_cold_start():
+    """Replay against an ECU that still holds an old brake command.
+
+    The first commands carry a stale brake value ('50') while the replayed
+    road is already clear; P2 must not fire because the preceding budget
+    window is not fully observed yet.
+    """
+    obs = [(0, replay.ID_CMD_BRAKE, 50)]                 # stale from a prior run
+    obs += [(t, replay.ID_SENSOR_DIST, 1800) for t in (0, 20, 60, 100)]
+    obs += [(100, replay.ID_CMD_BRAKE, 0), (200, replay.ID_CMD_BRAKE, 0)]
+    violations, counts = replay.check_properties(obs)
+    assert counts == {"P1": 0, "P2": 0, "P3": 0}, violations
+
+
+def test_p2_flags_brake_held_on_clear_road():
+    """A genuinely stuck brake on a continuously observed clear road fires."""
+    obs = [(t, replay.ID_SENSOR_DIST, 1800) for t in range(0, 1000, 20)]
+    obs += [(t, replay.ID_CMD_BRAKE, 40) for t in range(0, 1000, 100)]
+    violations, counts = replay.check_properties(obs)
+    assert counts["P2"] > 0, violations
+
+
 def test_replay_emergency_brake_no_violations(nodes):
     """Hard braking at 60 cm: full replay must stay clean (regression).
 

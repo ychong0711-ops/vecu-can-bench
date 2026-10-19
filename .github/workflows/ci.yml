@@ -47,6 +47,9 @@ jobs:
       - name: Run lint
         run: make lint
 
+      - name: Layering gate (SWC/RTE include allowlist)
+        run: python3 scripts/check_layering.py
+
       - name: Verify ID map artifacts
         run: python3 scripts/gen_idmap.py --check
 
@@ -79,3 +82,73 @@ jobs:
         with:
           name: reports-asan
           path: reports/
+
+  mutation:
+    # Track A2 gate. Runs unconditionally on purpose: measured ~81 s of suite
+    # time (job well under the 10-min budget), and a *silently skipped* quality
+    # gate is worse than a cheap one that always reports.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Python deps
+        run: pip install -r requirements.txt
+
+      - name: Load vcan module & create interface
+        run: |
+          sudo modprobe vcan
+          sudo ./scripts/setup_vcan.sh vcan0
+
+      - name: Build
+        run: make
+
+      - name: Mutation run (seeded bugs, detection gate >= 90 %)
+        run: make mutation
+
+      - name: Show mutation summary
+        if: always()
+        run: |
+          cat reports/mutation/mutation.md 2>/dev/null || true
+
+      - name: Upload mutation report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mutation-report
+          path: reports/mutation/
+
+  hil-replay:
+    # Track A3 gate: scripted sensor timelines replayed onto a live vcan bus,
+    # timing properties P1/P2/P3 checked against the observed actuator traffic.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Python deps
+        run: pip install -r requirements.txt
+
+      - name: Load vcan module & create interface
+        run: |
+          sudo modprobe vcan
+          sudo ./scripts/setup_vcan.sh vcan0
+
+      - name: Build
+        run: make
+
+      - name: HIL scenario replay suite (fresh ECU per scenario)
+        run: ./scripts/replay_suite.sh vcan0
+
+      - name: Upload replay reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: replay-reports
+          path: reports/replay/

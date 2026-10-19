@@ -56,7 +56,7 @@ def main():
         violations.extend(check_file(args.root, relpath, allowed))
 
     if violations:
-        print("layering gate FAILED (docs/ARCHITECTURE.md, Track A1):",
+        print("layering gate FAILED (docs/ARCHITECTURE.md §8, Track A1):",
               file=sys.stderr)
         for v in violations:
             print("  " + v, file=sys.stderr)

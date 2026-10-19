@@ -10,6 +10,12 @@ deterministic bus-load injector, `tc/netem`-based fault injection, a pytest
 regression suite (functional + performance thresholds) running in CI, and a
 Python analysis stage producing percentile statistics, plots and reports.
 
+On top of that measurement core the control ECU is **layered AUTOSAR-style
+(SWC / RTE / driver, statically gated)** and the verification story is
+quantitative: **seeded-bug mutation testing (14/14 detected = 100 %)** plus
+**HIL-style scenario replay with timing properties** — see
+[Verification hardening](#verification-hardening-track-a).
+
 ```
                     vcan0  (virtual CAN bus, modeled @ 500 kbit/s)
    ┌───────────┬────────────┬───────────────┬────────────┬───────────┐
@@ -46,7 +52,15 @@ make                             # builds bin/{ecu_sensor,ecu_feature,ecu_assist
 make asan
 
 # Static analysis (requires cppcheck: sudo apt-get install cppcheck)
-make lint
+make lint                        # cppcheck + layering gate (Track A)
+
+# Track A verification: seeded-bug mutation run (gate: detection >= 90 %)
+make mutation                    # -> reports/mutation/mutation.{json,md}
+
+# HIL-style scenario replay: timing properties on the real control ECU
+./bin/ecu_feature --duration 8 &
+python3 scripts/replay.py --scenario replay/scenarios/approach_brake.yaml
+python3 scripts/replay.py --from-frames reports/demo/frames.csv   # replay a recording
 
 # Regenerate & verify ID map from DBC (single source of truth)
 python3 scripts/gen_idmap.py
@@ -76,16 +90,23 @@ make test
 
 ```
 include/common.h     IDs, measured-frame layout, bit formulas, node API
+include/swc_brake.h  SWC layer: pure control logic (no OS/CAN headers, gated)
+include/rte_feature.h RTE layer: port struct + Rte_Read_/Rte_Write_ accessors
 src/can_util.c       SocketCAN open/bind/send, payload packing
 src/sched.c          cooperative periodic-task loop (select + deadlines)
 src/ecu_sensor.c     simulated speed/distance/temperature publisher
-src/ecu_feature.c    brake & light control logic (dist<300 cm → brake)
+src/ecu_feature.c    driver/composition: rx → RTE, 100 ms runnable, transmit
+src/swc_brake.c      SWC implementation — the mutation-testing target
+src/ecu_logic.c      compat FFI shim keeping the ctypes unit tests stable
 src/ecu_assistant.c  actuator simulation + PING/PONG echo
 src/monitor.c        passive recorder: CSV, per-ID loss/latency, bus load, JSON summary
 src/injector.c       target-% bus-load generator (absolute-deadline pacing)
 dbc/vecu.dbc         signal database (cantools-compatible, validated in CI)
-scripts/             vcan setup/teardown, netem presets, scenario & matrix runners
-tests/               pytest: DBC consistency, control logic, echo, loss/RTT/load thresholds
+mutation/seeds.yaml  15 seeded bugs + scripts/mutate.py runner (mutation score)
+replay/scenarios/    scripted sensor timelines + scripts/replay.py properties
+scripts/             vcan setup/teardown, netem presets, id map, layering gate,
+                     mutation & replay runners
+tests/               pytest: DBC, control logic (SWC), HIL replay, echo, loss/RTT/load
 analysis/analyze.py  CSV → percentile stats, latency CDF, bus-load series, E2E join, matrix compare
 ```
 
@@ -101,6 +122,58 @@ analysis/analyze.py  CSV → percentile stats, latency CDF, bus-load series, E2E
 | `test_busload_accuracy` | injector @25 % measures within 21–29 % |
 | `test_latency_under_load` | @40 % load: SENSOR_DIST p99 < 20 ms, loss < 0.5 % |
 | `test_netem_delay_visible` | netem 10 ms±2 ms shows up as RTT p50 ≥ 15 ms |
+| `test_logic.py` (7) | SWC unit suite via FFI: ramp/clamp boundaries, stale inputs, hazard priority, seq wrap, pack/unpack roundtrip, umbrella runnable |
+| `test_hil_replay.py` (9) | HIL replay: P1/P2/P3 on live vcan (3 scenarios + stalled-sensor liveness), silent-ECU violation (checker confidence), 4 deterministic property tests |
+
+## Verification hardening (Track A)
+
+The control ECU is **layered** (SWC / RTE / driver, one-way dependency) and
+verified on three independent levels. Design details: `docs/ARCHITECTURE.md` §8.
+All numbers below are measured on WSL2 (kernel 6.18, vcan0).
+
+| Gate | Command | Measured result |
+|---|---|---|
+| Layering gate | `make lint` (cppcheck + `scripts/check_layering.py`) | include allowlist enforced for `swc_brake.{h,c}` / `rte_feature.h`; violation injected in a negative test → gate fails with `file:line` |
+| Mutation testing | `make mutation` | **14/14 seeds detected (100 %)** + 1 verified equivalent mutant, ≈ 75 s serial (69–81 s measured) / 22 s with `--jobs 4` |
+| HIL replay | `pytest tests/test_hil_replay.py` | timing properties P1/P2/P3 clean on **24/24 scenario runs** (6 iterations × 4 scenarios) |
+| Regression suite | `make test` | **24 passed + 1 skipped** (netem probe) — was 14 passed + 1 skipped before Track A |
+
+```
+driver  src/ecu_feature.c      rx → Rte_Write_Sensor* · 100 ms runnable · transmit
+  │  (composition root: frame I/O + periodic scheduling only)
+  ▼
+RTE     include/rte_feature.h  rte_feature_t port + Rte_Read_/Rte_Write_ accessors
+  │
+  ▼
+SWC     include/swc_brake.h    swc_brake_compute() + granular API (pure, stdint only)
+        src/swc_brake.c        ← the mutation-testing target
+```
+
+**Findings produced by the verification loop** (each became a seed, a test or a
+rule — the interesting part is that three of them were *harness* defects that
+would have made the verification meaningless):
+
+1. **Dead code / equivalent mutant** — the `b > 100` clamp branch is unreachable
+   (`dist < 300 ⇒ b ≤ 100`), so one seed survived; the runner now verifies
+   equivalence claims mechanically instead of assuming them.
+2. **Coverage gap** — the A1 umbrella runnable `swc_brake_compute()` had no FFI
+   coverage; two seeds aimed at it survived until the umbrella test existed.
+3. **Vacuous checker** — the replay socket must self-receive its injected
+   `SENSOR_DIST` frames (`CAN_RAW_RECV_OWN_MSGS`), otherwise P1 has no input and
+   passes trivially (a check that cannot fail is worthless).
+4. **Property false positive** — the literal P1 wording flagged correct
+   behaviour when an obstacle cleared inside one command period (2 of 3 runs);
+   P1 is now state-based ("already braking, or braking starts within the
+   budget") and pinned by deterministic unit tests.
+
+**Reproduce**
+
+```bash
+make && make lint && make test     # build, gates, regression suite
+make mutation                      # mutation score -> reports/mutation/
+./bin/ecu_feature --duration 8 &   # ECU under test
+python3 scripts/replay.py --scenario replay/scenarios/emergency_brake.yaml
+```
 
 ## Measurement methodology & limitations
 
@@ -123,12 +196,13 @@ analysis/analyze.py  CSV → percentile stats, latency CDF, bus-load series, E2E
 
 ## Extension tracks
 
-Three deepening tracks are documented in `docs/ARCHITECTURE.md` §7:
-**(a)** ECU-verification emphasis (layered SWC/RTE-like architecture, mutation
-testing, HIL-style replay), **(b)** real-time/systems analysis (formal timing
+Three deepening tracks are documented in `docs/ARCHITECTURE.md` §7.
+**(a)** ECU-verification emphasis — layered SWC/RTE-like architecture, mutation
+testing, HIL-style replay — is **implemented** (see the section above and
+`docs/ARCHITECTURE.md` §8). **(b)** real-time/systems analysis (formal timing
 properties, RM utilization vs. measured response times, trace anomaly
-detection), **(c)** timing-analysis emphasis (WCRT estimation, jitter
-decomposition, worst-case scenario search).
+detection) and **(c)** timing-analysis emphasis (WCRT estimation, jitter
+decomposition, worst-case scenario search) remain open candidates.
 
 ## License
 
