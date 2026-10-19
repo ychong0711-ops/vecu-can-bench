@@ -9,7 +9,12 @@ OUT="reports/${NAME}"
 mkdir -p "$OUT"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
-"$ROOT/scripts/setup_vcan.sh" "$IFACE" >/dev/null
+# Create the interface only when it is missing: CI prepares it in a privileged
+# step, and an unprivileged scenario run must not fail on `ip link set ... up`
+# (EPERM) when a ready interface already exists.
+if ! ip link show "$IFACE" >/dev/null 2>&1; then
+    "$ROOT/scripts/setup_vcan.sh" "$IFACE" >/dev/null
+fi
 "$ROOT/scripts/netem.sh" "$NETEM" "$IFACE" >/dev/null
 
 "$ROOT/bin/monitor"       --iface "$IFACE" --duration "$DUR" \
