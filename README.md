@@ -31,6 +31,30 @@ quantitative: **seeded-bug mutation testing (14/14 detected = 100 %)** plus
                                               reports/ (stats, plots, report.md)
 ```
 
+## Measured results at a glance
+
+Measured on WSL2 (kernel 6.18, vcan0) — every number is reproducible via the
+commands linked in [Verification hardening](#verification-hardening-track-a):
+
+| Result | Value | Source |
+|---|---|---|
+| Mutation score (seeded bugs) | **14/14 = 100 %** (gate ≥ 90 %) | `make mutation` |
+| HIL scenario runs clean | **24/24** (P1/P2/P3 timing properties) | `pytest tests/test_hil_replay.py` |
+| Regression suite | 24 passed + 1 skipped (pre-Track-A baseline: 14) | `make test` |
+| E2E sensor→brake reaction (p99) | **50 ms** — the `SENSOR_DIST` sample period; the SrcSeq join is quantized per sample (15 s CI demo, n=149) | CI demo run (images below) |
+| One-way latency p99 under 40 % load | < 20 ms asserted, CI-enforced | `make test` |
+| Frame loss | 0 lost on idle bus and in the 25 %-load demo; < 0.5 % asserted @ 40 % | `make test`, demo run |
+
+From the CI demo run shown above (15 s, 20 % target load, 16 550 frames,
+zero loss). Left: one-way latency CDF (p99 ≤ 1 ms); middle: bus load with
+the injector's ±1 % band; right: sensor→brake end-to-end reaction. A full
+machine-readable version of the mutation run is in
+[`docs/mutation-report.md`](docs/mutation-report.md).
+
+![latency CDF](docs/img/latency_cdf.png) ![bus load](docs/img/bus_load.png) ![E2E reaction](docs/img/e2e_reaction.png)
+
+## What is measured
+
 ## What is measured
 
 | Metric | Method |
@@ -223,4 +247,4 @@ decomposition, worst-case scenario search) remain open candidates.
 
 ## License
 
-MIT
+MIT — see [LICENSE](LICENSE).
