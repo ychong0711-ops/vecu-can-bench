@@ -1,0 +1,16 @@
+# Replay scenario: normal cruise (clear road, no braking expected)
+# Values are RAW DBC values (DistCm, SpeedKphX10).
+name: cruise
+description: "clear road at 75 km/h — P2: brake must stay 0"
+duration_ms: 1600
+
+signals:
+  - id: SENSOR_DIST
+    period_ms: 20
+    steps:
+      - {at_ms: 0, value: 1800}     # 18 m: far outside the 300 cm ramp
+
+  - id: SENSOR_SPEED
+    period_ms: 100
+    steps:
+      - {at_ms: 0, value: 750}      # 75.0 km/h -> low beam (irrelevant to P1/P2)

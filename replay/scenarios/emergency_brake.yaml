@@ -1,0 +1,20 @@
+# Replay scenario: emergency deceleration (obstacle at 60 cm)
+# Exercises the hazard branch (dist < 150 cm) and the steep ramp tail.
+name: emergency_brake
+description: "18 m -> 0.6 m at 400 ms (hazard), clear at 1000 ms"
+duration_ms: 1400
+
+signals:
+  - id: SENSOR_DIST
+    period_ms: 20
+    steps:
+      - {at_ms: 0,    value: 1800}
+      - {at_ms: 400,  value: 60}     # hazard: < 150 cm; brake = (300-60)/3 = 80 %
+      - {at_ms: 1000, value: 1800}
+
+  - id: SENSOR_SPEED
+    period_ms: 100
+    steps:
+      - {at_ms: 0,    value: 950}    # 95.0 km/h
+      - {at_ms: 400,  value: 200}    # 20.0 km/h
+      - {at_ms: 1000, value: 950}
