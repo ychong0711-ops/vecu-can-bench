@@ -6,3 +6,4 @@ numpy
 matplotlib
 tabulate    # backend for pandas.DataFrame.to_markdown() in analysis/analyze.py
 cantools    # DBC parsing in tests
+PyYAML      # mutation/seeds.yaml parsing in scripts/mutate.py (Track A2)

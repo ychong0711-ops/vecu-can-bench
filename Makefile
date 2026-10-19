@@ -17,7 +17,7 @@ ASAN_LIB_SRCS := src/can_util.c src/sched.c
 ASAN_LIB_OBJS := $(ASAN_LIB_SRCS:src/%.c=$(ASAN_BIN)/%.o)
 ASAN_TARGETS  := $(addprefix $(ASAN_BIN)/,$(NODES))
 
-.PHONY: all clean test setup-vcan teardown-vcan demo deps asan lint
+.PHONY: all clean test setup-vcan teardown-vcan demo deps asan lint mutation
 
 all: $(TARGETS)
 
@@ -74,6 +74,10 @@ teardown-vcan:
 
 test: all
 	python3 -m pytest tests/ -v
+
+# Track A2: seed-bug mutation run + report (reports/mutation/)
+mutation: all
+	python3 scripts/mutate.py
 
 demo: all
 	./scripts/run_demo.sh

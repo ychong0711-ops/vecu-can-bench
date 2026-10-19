@@ -44,5 +44,6 @@ uint8_t  ecu_logic_light_state(int have_dist, uint16_t dist_cm,
 uint16_t ecu_logic_cmd_brake_pack(uint16_t dist_seq, uint8_t brake_level);
 void     ecu_logic_cmd_brake_unpack(uint16_t value, uint8_t *src_seq8,
                                     uint8_t *brake_level);
+void     ecu_logic_compute(const swc_inputs_t *in, swc_outputs_t *out);
 
 #endif /* VECU_ECU_LOGIC_H */

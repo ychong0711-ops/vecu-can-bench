@@ -24,6 +24,19 @@ GCC = shutil.which("gcc") or shutil.which("cc")
 LIGHT_OFF, LIGHT_LOW_BEAM, LIGHT_HAZARD = 0, 1, 2
 
 
+class SwcInputs(ctypes.Structure):
+    """Mirror of swc_inputs_t (include/swc_brake.h)."""
+    _fields_ = [("have_dist", ctypes.c_int), ("dist_cm", ctypes.c_uint16),
+                ("dist_seq", ctypes.c_uint16), ("have_speed", ctypes.c_int),
+                ("speed_01kmh", ctypes.c_uint16)]
+
+
+class SwcOutputs(ctypes.Structure):
+    """Mirror of swc_outputs_t (include/swc_brake.h)."""
+    _fields_ = [("brake", ctypes.c_uint8), ("light", ctypes.c_uint8),
+                ("cmd_brake", ctypes.c_uint16)]
+
+
 @pytest.fixture(scope="module")
 def logic():
     """Compile ecu_logic.c + swc_brake.c -> libecu_logic.so (ctypes FFI)."""
@@ -47,6 +60,9 @@ def logic():
     lib.ecu_logic_cmd_brake_unpack.argtypes = \
         [u16, ctypes.POINTER(u8), ctypes.POINTER(u8)]
     lib.ecu_logic_cmd_brake_unpack.restype = None
+    lib.ecu_logic_compute.argtypes = [ctypes.POINTER(SwcInputs),
+                                      ctypes.POINTER(SwcOutputs)]
+    lib.ecu_logic_compute.restype = None
     yield lib
     del lib
     shutil.rmtree(tmp, ignore_errors=True)
@@ -120,3 +136,28 @@ def test_cmd_brake_pack_unpack_roundtrip(logic):
             src_seq8, level = unpack(logic, value)
             assert src_seq8 == (seq & 0xFF)
             assert level == brake
+
+
+def test_compute_umbrella_matches_granular(logic):
+    """swc_brake_compute (100 ms runnable) must equal the granular API.
+
+    Covers the umbrella port introduced in A1: all three outputs are checked
+    against the individually-tested helpers for representative inputs.
+    """
+    cases = [
+        # (have_dist, dist_cm, dist_seq, have_speed, speed_01kmh)
+        (1, 100, 42, 1, 800),     # braking + low beam
+        (1, 149, 7, 1, 900),      # hazard wins over low beam
+        (1, 299, 255, 0, 0),      # ramp tail, no speed sample
+        (0, 100, 13, 1, 901),     # stale distance: no hazard, low beam only
+        (1, 500, 256, 1, 700),    # clear road, below low-beam threshold
+        (0, 0, 0, 0, 0),          # cold start: everything off
+    ]
+    for have_dist, dist, seq, have_speed, spd in cases:
+        inp = SwcInputs(have_dist, dist, seq, have_speed, spd)
+        out = SwcOutputs()
+        logic.ecu_logic_compute(ctypes.byref(inp), ctypes.byref(out))
+        assert out.brake == logic.ecu_logic_brake_level(have_dist, dist)
+        assert out.light == logic.ecu_logic_light_state(have_dist, dist,
+                                                        have_speed, spd)
+        assert out.cmd_brake == logic.ecu_logic_cmd_brake_pack(seq, out.brake)

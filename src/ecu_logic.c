@@ -27,3 +27,8 @@ void ecu_logic_cmd_brake_unpack(uint16_t value, uint8_t *src_seq8,
 {
     swc_cmd_brake_unpack(value, src_seq8, brake_level);
 }
+
+void ecu_logic_compute(const swc_inputs_t *in, swc_outputs_t *out)
+{
+    swc_brake_compute(in, out);
+}

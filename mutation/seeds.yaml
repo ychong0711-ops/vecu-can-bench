@@ -1,0 +1,117 @@
+# mutation/seeds.yaml — Track A2 seed bug catalog (12 seeds, decision cmt-a2sd02)
+#
+# Each seed is an exact text replacement applied to the SWC layer
+# (target file below) of a throwaway tree copy. A seed is DETECTED when the
+# selected test suite fails on the mutant, SURVIVED when it still passes.
+# Mutation score = detected / (detected + survived); build errors are
+# reported separately and excluded from the score (standard practice).
+#
+# 'expect' documents which existing test should catch the seed (informational;
+# the score is always computed from actual runs). Detectability was calibrated
+# against tests/test_logic.py + tests/test_functional.py on the A1 baseline.
+# Seeds marked 'equivalent: true' are behaviour-preserving by construction:
+# the runner verifies the claim (expects a survivor), excludes them from the
+# score, and flags 'unexpected_kill' if the suite does kill them.
+target: src/swc_brake.c
+
+seeds:
+  # --- brake ramp arithmetic -------------------------------------------
+  - id: brake_ramp_divisor
+    desc: "ramp slope /3 -> /2 (weaker braking)"
+    find: "(300 - (int)dist_cm) / 3"
+    replace: "(300 - (int)dist_cm) / 2"
+    expect: test_brake_threshold_boundaries
+
+  - id: brake_plus_instead_of_minus
+    desc: "ramp offset 300-dist -> 300+dist (inverted ramp)"
+    find: "(300 - (int)dist_cm)"
+    replace: "(300 + (int)dist_cm)"
+    expect: test_brake_threshold_boundaries
+
+  # --- brake thresholds / guards ---------------------------------------
+  - id: brake_threshold_margin
+    desc: "brake engage range <300 -> <250 cm (late braking)"
+    find: "if (have_dist && dist_cm < 300)"
+    replace: "if (have_dist && dist_cm < 250)"
+    expect: test_brake_threshold_boundaries
+
+  - id: brake_clamp_ceiling
+    desc: "clamp ceiling 100 -> 90 % (max braking foreshortened)"
+    find: "(b > 100 ? 100 : b)"
+    replace: "(b > 90 ? 90 : b)"
+    expect: test_brake_threshold_boundaries
+
+  - id: clamp_upper_equivalent
+    desc: "upper clamp removed entirely (b <= 100 always) — EQUIVALENT mutant"
+    find: "b < 0 ? 0 : (b > 100 ? 100 : b)"
+    replace: "b < 0 ? 0 : b"
+    expect: ""
+    equivalent: true   # unreachable branch: dist < 300 => b = (300-dist)/3 <= 100
+                       # => every test outcome is identical by construction.
+                       # The runner verifies this claim: if the suite DOES kill
+                       # it, the result is flagged 'unexpected_kill'.
+
+  - id: brake_stale_guard_drop
+    desc: "have_dist guard dropped (stale distance commands braking)"
+    find: "if (have_dist && dist_cm < 300)"
+    replace: "if (dist_cm < 300)"
+    expect: test_brake_stale_distance
+
+  # --- light logic ------------------------------------------------------
+  - id: light_threshold_flip
+    desc: "hazard boundary <150 -> <=150 cm (off-by-one flip)"
+    find: "if (have_dist && dist_cm < 150)"
+    replace: "if (have_dist && dist_cm <= 150)"
+    expect: test_light_boundaries_and_priority
+
+  - id: light_speed_threshold
+    desc: "low-beam threshold 70.0 -> 60.0 km/h"
+    find: "speed_01kmh > 700"
+    replace: "speed_01kmh > 600"
+    expect: test_light_boundaries_and_priority
+
+  - id: light_priority_inversion
+    desc: "hazard/low-beam priority (else-if) turned into overwrite (if)"
+    find: "else if (have_speed && speed_01kmh > 700) light = SWC_LIGHT_LOW_BEAM;"
+    replace: "if (have_speed && speed_01kmh > 700) light = SWC_LIGHT_LOW_BEAM;"
+    expect: test_light_boundaries_and_priority
+
+  - id: light_stale_dist_guard_drop
+    desc: "have_dist guard dropped in hazard branch"
+    find: "if (have_dist && dist_cm < 150)"
+    replace: "if (dist_cm < 150)"
+    expect: test_light_stale_inputs
+
+  - id: light_stale_speed_guard_drop
+    desc: "have_speed guard dropped in low-beam branch"
+    find: "else if (have_speed && speed_01kmh > 700)"
+    replace: "else if (speed_01kmh > 700)"
+    expect: test_light_stale_inputs
+
+  # --- E2E correlation packing -----------------------------------------
+  - id: pack_shifts_dropped
+    desc: "src_seq8 shift removed from CMD_BRAKE wire value"
+    find: "return (uint16_t)(((dist_seq & 0xFFu) << 8) | brake_level);"
+    replace: "return (uint16_t)((dist_seq & 0xFFu) | brake_level);"
+    expect: test_cmd_brake_pack_unpack_roundtrip
+
+  - id: unpack_seq_mask_drop
+    desc: "unpack reads src_seq8 from the low byte (E2E join breaks)"
+    find: "*src_seq8   = (uint8_t)((value >> 8) & 0xFFu);"
+    replace: "*src_seq8   = (uint8_t)(value & 0xFFu);"
+    expect: test_src_seq_wraparound
+
+  # --- umbrella runnable (swc_brake_compute) ----------------------------
+  # Guarded by test_compute_umbrella_matches_granular (A2.4 addition): without
+  # that test these two seeds SURVIVE, proving the runnable needed coverage.
+  - id: compute_brake_uses_seq
+    desc: "runnable feeds dist_seq into the ramp instead of dist_cm"
+    find: "out->brake = swc_brake_level(in->have_dist, in->dist_cm);"
+    replace: "out->brake = swc_brake_level(in->have_dist, in->dist_seq);"
+    expect: test_compute_umbrella_matches_granular
+
+  - id: compute_cmd_packs_light
+    desc: "runnable packs the light state into the CMD_BRAKE wire value"
+    find: "out->cmd_brake = swc_cmd_brake_pack(in->dist_seq, out->brake);"
+    replace: "out->cmd_brake = swc_cmd_brake_pack(in->dist_seq, out->light);"
+    expect: test_compute_umbrella_matches_granular
