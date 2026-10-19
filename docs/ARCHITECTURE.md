@@ -238,6 +238,7 @@ the false positives while keeping the strictness test intact.
 ### 8.5 Reproduce
 
 ```bash
+sudo ./scripts/ci_setup_vcan.sh   # stripped image (CI): modules-extra + vcan0
 make                              # build
 python3 -m pytest tests/ -v       # 24 passed + 1 skipped (incl. HIL replay)
 make mutation                     # 15 seeds -> reports/mutation/mutation.{json,md}
@@ -245,6 +246,18 @@ python3 scripts/replay.py --scenario replay/scenarios/emergency_brake.yaml
 python3 scripts/replay.py --from-frames reports/demo/frames.csv
 python3 scripts/check_layering.py # layering gate (also part of `make lint`)
 ```
+
+### 8.6 CI gates
+
+`.github/workflows/ci.yml` runs five jobs on every push: `build-and-test`
+(pytest incl. the HIL tests, then the 15 s full-stack demo + analysis), `qa`
+(cppcheck, layering gate, DBC/id-map drift), `test-asan`, `mutation` (≥ 90 %
+score gate) and `hil-replay` (`scripts/replay_suite.sh`) — each uploading its
+report as an artifact. Runner note: GitHub's images ship no CAN kernel module,
+so every vcan job starts with `sudo ./scripts/ci_setup_vcan.sh`, which installs
+`linux-modules-extra-$(uname -r)` and then creates the interface. The mutation
+job deliberately runs unconditionally (measured ≈ 55 s in CI): a quality gate
+that silently skips itself is worse than a cheap one that always reports.
 
 ## 9. References
 

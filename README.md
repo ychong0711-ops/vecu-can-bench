@@ -1,5 +1,7 @@
 # vECU-Bench
 
+[![ci](https://github.com/ychong0711-ops/vecu-can-bench/actions/workflows/ci.yml/badge.svg)](https://github.com/ychong0711-ops/vecu-can-bench/actions/workflows/ci.yml)
+
 **A virtual ECU network testbed on Linux SocketCAN for measuring CAN latency,
 frame loss and bus load — with automated regression testing.**
 
@@ -46,6 +48,10 @@ quantitative: **seeded-bug mutation testing (14/14 detected = 100 %)** plus
 # requires: Linux (native/VM) with the vcan module, gcc, make, python3
 sudo modprobe vcan
 ./scripts/setup_vcan.sh          # creates vcan0
+
+# on a stripped image (e.g. GitHub's ubuntu-latest) the CAN modules are not
+# installed — this adds linux-modules-extra-$(uname -r) first, then vcan0:
+sudo ./scripts/ci_setup_vcan.sh
 make                             # builds bin/{ecu_sensor,ecu_feature,ecu_assistant,monitor,injector}
 
 # AddressSanitizer + UBSan build (separate output dir: bin-asan/)
@@ -174,6 +180,17 @@ make mutation                      # mutation score -> reports/mutation/
 ./bin/ecu_feature --duration 8 &   # ECU under test
 python3 scripts/replay.py --scenario replay/scenarios/emergency_brake.yaml
 ```
+
+CI (`.github/workflows/ci.yml`) runs the same gates as five jobs —
+`build-and-test` (pytest on live vcan + demo + analysis), `qa` (cppcheck,
+layering gate, DBC/id-map), `test-asan`, `mutation` and `hil-replay` — and
+uploads each report as an artifact. Reaching all-green took three
+runner-specific fixes worth knowing when reproducing on a stripped image:
+shell scripts must be committed executable (`100755`, they were `100644` from
+a Windows checkout), GitHub's images ship **no CAN kernel module**
+(`scripts/ci_setup_vcan.sh` installs the matching `linux-modules-extra` first),
+and scenario runs must not require privileges once the interface already exists
+(the demo died on `ip link set up` with `EPERM`).
 
 ## Measurement methodology & limitations
 
